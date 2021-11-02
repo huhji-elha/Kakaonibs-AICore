@@ -6,8 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
-*/*/weights
-*/*/bounding_box/*.ttf
+*/weights
+*/bounding_box/*.ttf
+*/__pycache__
+*/*/__pycache__
 # Distribution / packaging
 .Python
 build/
