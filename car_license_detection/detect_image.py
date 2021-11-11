@@ -1,24 +1,29 @@
-import argparse
+import os
 import json
+import boto3
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 from bounding_box import bounding_box as bb
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-def detect(save_img=True):
-    imgsz = (512, 394) if ONNX_EXPORT else opt.img_size
-    print(imgsz)
-    out, source, weights, half = (opt.output, opt.source, opt.weights, opt.half)
+def detect(source=None, save_img=True):
+    imgsz = 512
+    half = True
+    out, weights = ("/tmp", "weights/best_weigths.pt")
 
     # Initialize
-    device = torch_utils.select_device(device="cpu" if ONNX_EXPORT else opt.device)
+    device = torch_utils.select_device(device="")
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
 
     # Initialize model
-    model = Darknet(opt.cfg, imgsz)
+    cfg_path = os.path.join(os.getcwd(), "cfg", "yolov3-spp-custom.cfg")
+    model = Darknet(cfg_path, imgsz)
 
     # Load weights
     model.load_state_dict(torch.load(weights, map_location=device)["model"])
@@ -40,11 +45,24 @@ def detect(save_img=True):
     if half:
         model.half()
 
+    # download s3 image
+    s3 = boto3.resource(
+        "s3",
+        aws_access_key_id=os.getenv("ACCOUNT_ID"),
+        aws_secret_access_key=os.getenv("ACCESS_KEY"),
+    )
+    source_bucket = s3.Bucket(os.getenv("BUCKET_NAME"))
+    if source:
+        file_path = os.path.join("/tmp", source)
+        source_bucket.download_file(source, file_path)
+    else:
+        file_path = "sample.png"
+
     # Set Dataloader
-    dataset = LoadImages(source, img_size=imgsz)
+    dataset = LoadImages(file_path, img_size=imgsz)
 
     # Get names and colors
-    names = load_classes(opt.names)
+    names = load_classes("data/class.names")
 
     # Run inference
     t0 = time.time()
@@ -59,7 +77,7 @@ def detect(save_img=True):
 
         # Inference
         t1 = torch_utils.time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
+        pred = model(img, augment=True)[0]
         t2 = torch_utils.time_synchronized()
 
         # to float
@@ -68,12 +86,7 @@ def detect(save_img=True):
 
         # Apply NMS
         pred = non_max_suppression(
-            pred,
-            opt.conf_thres,
-            opt.iou_thres,
-            multi_label=False,
-            classes=opt.classes,
-            agnostic=opt.agnostic_nms,
+            pred, conf_thres=0.3, iou_thres=0.6, multi_label=False, agnostic=True,
         )
 
         # Apply Classifier
@@ -118,44 +131,19 @@ def detect(save_img=True):
                 if dataset.mode == "images":
                     path, filename = os.path.split(save_path)
                     origin_name, ext = os.path.splitext(filename)
-                    output_save_path = os.path.join(path, origin_name + "_output" + ext)
-                    print("output_save_path : ", output_save_path)
+                    output_file_name = origin_name + "_output" + ext
+                    output_save_path = os.path.join(path, output_file_name)
                     cv2.imwrite(output_save_path, im0)
 
     print("Done. (%.3fs)" % (time.time() - t0))
-    with open("conf_result.json", "w", encoding="utf-8") as f:
+    json_file_name = origin_name + "_output.json"
+    json_save_path = os.path.join(path, json_file_name)
+    with open(json_save_path, "w", encoding="utf-8") as f:
         json.dump(save_dict, f, ensure_ascii=False)
 
+    source_bucket.upload_file(output_save_path, output_file_name)
+    source_bucket.upload_file(json_save_path, json_file_name)
+    os.remove(output_save_path)
+    os.remove(json_save_path)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cfg", type=str, default="cfg/yolov3-spp-custom.cfg", help="*.cfg path")
-    parser.add_argument("--names", type=str, default="data/class.names", help="*.names path")
-    parser.add_argument(
-        "--weights", type=str, default="weights\\best_weigths.pt", help="weights path"
-    )
-    parser.add_argument(
-        "--source", type=str, default="data/samples", help="source"
-    )  # input file/folder, 0 for webcam
-    parser.add_argument(
-        "--output", type=str, default="output", help="output folder"
-    )  # output folder
-    parser.add_argument("--img-size", type=int, default=512, help="inference size (pixels)")
-    parser.add_argument("--conf-thres", type=float, default=0.3, help="object confidence threshold")
-    parser.add_argument("--iou-thres", type=float, default=0.6, help="IOU threshold for NMS")
-    parser.add_argument(
-        "--fourcc", type=str, default="mp4v", help="output video codec (verify ffmpeg support)"
-    )
-    parser.add_argument("--half", action="store_true", help="half precision FP16 inference")
-    parser.add_argument("--device", default="", help="device id (i.e. 0 or 0,1) or cpu")
-    parser.add_argument("--view-img", action="store_true", help="display results")
-    parser.add_argument("--save-txt", action="store_true", help="save results to *.txt")
-    parser.add_argument("--classes", nargs="+", type=int, help="filter by class")
-    parser.add_argument("--agnostic-nms", action="store_true", help="class-agnostic NMS")
-    parser.add_argument("--augment", action="store_true", help="augmented inference")
-    opt = parser.parse_args()
-    opt.cfg = check_file(opt.cfg)  # check file
-    opt.names = check_file(opt.names)  # check file
-
-    with torch.no_grad():
-        detect()
+    return output_file_name

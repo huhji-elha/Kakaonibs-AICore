@@ -1,6 +1,8 @@
 import os
 import time
 import torch
+import math
+import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
 
@@ -82,3 +84,16 @@ def model_info(model, verbose=False):
         "Model Summary: %g layers, %g parameters, %g gradients%s"
         % (len(list(model.parameters())), n_p, n_g, fs)
     )
+
+
+def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)
+    # scales img(bs,3,y,x) by ratio constrained to gs-multiple
+    if ratio == 1.0:
+        return img
+    else:
+        h, w = img.shape[2:]
+        s = (int(h * ratio), int(w * ratio))  # new size
+        img = F.interpolate(img, size=s, mode="bilinear", align_corners=False)  # resize
+        if not same_shape:  # pad/crop img
+            h, w = [math.ceil(x * ratio / gs) * gs for x in (h, w)]
+        return F.pad(img, [0, w - s[1], 0, h - s[0]], value=0.447)  # value = imagenet mean
