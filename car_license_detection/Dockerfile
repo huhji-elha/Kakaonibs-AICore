@@ -1,7 +1,7 @@
 FROM pytorch/pytorch:latest
 
 # Install linux packages
-RUN apt update && apt-get install vim libgl1-mesa-glx libglib2.0-0
+RUN apt update && apt install -y vim libgl1-mesa-glx libglib2.0-0
 
 # Install python dependencies
 COPY requirements.txt .
