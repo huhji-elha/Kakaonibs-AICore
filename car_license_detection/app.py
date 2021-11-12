@@ -1,10 +1,12 @@
+import set_weights
+
+set_weights.get_files()
+
 import torch
 import detect_image
-import set_weights
 from flask import Flask, request
 
 app = Flask(__name__)
-set_weights.get_files()
 
 
 @app.route("/", methods=["GET"])
