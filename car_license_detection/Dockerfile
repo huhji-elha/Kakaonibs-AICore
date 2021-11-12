@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.7.0-cuda11.0-cudnn8-devel
+FROM python:3.7
 
 # Install linux packages
 RUN apt update && apt install -y vim libgl1-mesa-glx libglib2.0-0
