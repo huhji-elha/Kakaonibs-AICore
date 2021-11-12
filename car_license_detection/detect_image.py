@@ -1,19 +1,17 @@
 import os
 import json
-import boto3
+import s3_access
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 from bounding_box import bounding_box as bb
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 def detect(source=None, save_img=True):
     imgsz = 512
     half = True
-    out, weights = ("/tmp", "weights/best_weigths.pt")
+    weights = os.path.join(os.getcwd(), "weights", "yolov3_plate_detection_weights.pt")
+    out = "/tmp"
 
     # Initialize
     device = torch_utils.select_device(device="")
@@ -46,15 +44,10 @@ def detect(source=None, save_img=True):
         model.half()
 
     # download s3 image
-    s3 = boto3.resource(
-        "s3",
-        aws_access_key_id=os.getenv("ACCOUNT_ID"),
-        aws_secret_access_key=os.getenv("ACCESS_KEY"),
-    )
-    source_bucket = s3.Bucket(os.getenv("BUCKET_NAME"))
+    source_bucket = s3_access.get_s3_bucket()
     if source:
         file_path = os.path.join("/tmp", source)
-        source_bucket.download_file(source, file_path)
+        s3_access.download_file(source_bucket, source, file_path)
     else:
         file_path = "sample.png"
 
@@ -141,9 +134,7 @@ def detect(source=None, save_img=True):
     with open(json_save_path, "w", encoding="utf-8") as f:
         json.dump(save_dict, f, ensure_ascii=False)
 
-    source_bucket.upload_file(output_save_path, output_file_name)
-    source_bucket.upload_file(json_save_path, json_file_name)
-    os.remove(output_save_path)
-    os.remove(json_save_path)
+    s3_access.upload_file(source_bucket, output_save_path, output_file_name)
+    s3_access.upload_file(source_bucket, json_save_path, json_file_name)
 
     return output_file_name

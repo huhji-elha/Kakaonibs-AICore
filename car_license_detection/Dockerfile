@@ -18,5 +18,5 @@ COPY . /usr/src/app
 
 # Set environment variables
 ENV HOME=/usr/src/app
-
+CMD ["python3", "set_weights.py"]
 CMD ["python3", "app.py"]
