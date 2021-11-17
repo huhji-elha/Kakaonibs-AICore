@@ -24,7 +24,7 @@ def detect(source=None, save_img=True):
     model = Darknet(cfg_path, imgsz)
 
     # Load weights
-    model.load_state_dict(torch.load(weights, map_location=device)["model"])
+    model.load_state_dict(torch.load(weights, map_location=device)["model"], strict=False)
 
     # Second-stage classifier
     classify = False
